@@ -33,10 +33,6 @@ class Neo4jGraphRAGConfig(VectorDatabaseSettings):
         default="entity_embeddings",
         description="Name of the entity vector index"
     )
-    vector_dimensions: int = Field(
-        default=384,
-        description="Embedding dimensions"
-    )
     vector_similarity_threshold: float = Field(
         default=0.7,
         description="Minimum similarity score for vector search"
