@@ -1,6 +1,6 @@
 from cat import VectorDatabaseSettings
 from pydantic import ConfigDict, Field
-from typing import Type, List
+from typing import Type, List, Dict
 
 from .graphrag_handler import GraphRAGHandler
 
@@ -9,11 +9,11 @@ class Neo4jGraphRAGConfig(VectorDatabaseSettings):
     # Neo4j connection
     neo4j_uri: str = Field(
         default="neo4j://localhost:7687",
-        description="Neo4j URI"
+        description="Neo4j URI",
     )
     neo4j_user: str = Field(
         default="neo4j",
-        description="Neo4j username"
+        description="Neo4j username",
     )
     neo4j_password: str | None = Field(
         default=None,
@@ -21,9 +21,13 @@ class Neo4jGraphRAGConfig(VectorDatabaseSettings):
     )
     neo4j_database: str = Field(
         default="neo4j",
-        description="Neo4j database name"
+        description="Neo4j database name",
     )
-    
+    neo4j_kwargs: Dict = Field(
+        default={},
+        description="Neo4j extra arguments, as a dictionary",
+    )
+
     # Vector indexes
     document_vector_index: str = Field(
         default="document_embeddings",
@@ -31,29 +35,29 @@ class Neo4jGraphRAGConfig(VectorDatabaseSettings):
     )
     entity_vector_index: str = Field(
         default="entity_embeddings",
-        description="Name of the entity vector index"
+        description="Name of the entity vector index",
     )
     vector_similarity_threshold: float = Field(
         default=0.7,
-        description="Minimum similarity score for vector search"
+        description="Minimum similarity score for vector search",
     )
     
     # Entity extraction
     enable_entity_extraction: bool = Field(
         default=True,
-        description="Enable entity extraction with spaCy"
+        description="Enable entity extraction with spaCy",
     )
     enable_entity_embeddings: bool = Field(
         default=False,
-        description="Enable vector embeddings for entities (increases storage)"
+        description="Enable vector embeddings for entities (increases storage)",
     )
     enable_entity_expansion: bool = Field(
         default=True,
-        description="Enable entity expansion during retrieval"
+        description="Enable entity expansion during retrieval",
     )
     spacy_model: str = Field(
         default="en_core_web_lg",
-        description="spaCy model name (en_core_web_sm, en_core_web_md, en_core_web_lg, en_core_web_trf)"
+        description="spaCy model name (en_core_web_sm, en_core_web_md, en_core_web_lg, en_core_web_trf)",
     )
     extra_technology_patterns: List[str] = Field(
         default_factory=list,
@@ -61,7 +65,7 @@ class Neo4jGraphRAGConfig(VectorDatabaseSettings):
             "Additional regex patterns for technology entity extraction. "
             "Useful for domain-specific keywords or non-English tech terms not "
             "covered by the built-in list (e.g. [r'\\b(MioFramework|AltroTool)\\b'])."
-        )
+        ),
     )
 
     # Graph retrieval
@@ -69,23 +73,23 @@ class Neo4jGraphRAGConfig(VectorDatabaseSettings):
         default=2,
         description="Max depth for graph traversal",
         ge=1,
-        le=5
+        le=5,
     )
     graph_decay_factor: float = Field(
         default=0.8,
         description="Score decay factor per hop",
         ge=0.5,
-        le=1.0
+        le=1.0,
     )
     
     # Performance
     connection_pool_size: int = Field(
         default=50,
-        description="Neo4j connection pool size"
+        description="Neo4j connection pool size",
     )
     save_memory_snapshots: bool = Field(
         default=False,
-        description="Enable snapshot backup"
+        description="Enable snapshot backup",
     )
     
     model_config = ConfigDict(
