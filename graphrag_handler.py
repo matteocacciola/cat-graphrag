@@ -31,6 +31,7 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         neo4j_user: str,
         neo4j_password: str,
         neo4j_database: str = "neo4j",
+        neo4j_kwargs: Dict = {},
         document_vector_index: str = "document_embeddings",
         entity_vector_index: str = "entity_embeddings",
         vector_similarity_threshold: float = 0.7,
@@ -47,6 +48,7 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
             neo4j_user=neo4j_user,
             neo4j_password=neo4j_password,
             neo4j_database=neo4j_database,
+            neo4j_kwargs=neo4j_kwargs,
             document_vector_index=document_vector_index,
             entity_vector_index=entity_vector_index,
             vector_similarity_threshold=vector_similarity_threshold,
@@ -107,6 +109,7 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
                 auth=(self.config.neo4j_user, self.config.neo4j_password),
                 max_connection_pool_size=self.config.connection_pool_size,
                 connection_acquisition_timeout=60,
+                **self.config.neo4j_kwargs,
             )
             async with self._driver.session(database=self.config.neo4j_database) as session:
                 await session.run("RETURN 1")
