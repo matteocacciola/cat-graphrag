@@ -417,6 +417,8 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         )
 
     async def create_collection(self, embedder_name: str, embedder_size: int, collection_name: str):
+        await self._ensure_connected()
+
         async with self._get_session() as session:
             await self._ensure_collection_exists_in_session(
                 session, collection_name, embedder_name, embedder_size
@@ -432,6 +434,8 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         Entities are deleted only if they become orphans (no remaining MENTIONS
         from documents in other collections), preserving cross-collection knowledge.
         """
+        await self._ensure_connected()
+
         # Step 1: delete the collection node and all its documents.
         # DETACH DELETE removes all relationships including MENTIONS,
         # so orphan detection in Step 2 is correct.
@@ -453,6 +457,8 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         log.info(f"Collection {collection_name} deleted (orphaned entities pruned)")
 
     async def check_collection_existence(self, collection_name: str) -> bool:
+        await self._ensure_connected()
+
         query = """
         MATCH (c:Collection {name: $name, tenant_id: $tenant_id})
         RETURN count(c) > 0 AS exists
@@ -463,6 +469,8 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
             return record["exists"] if record else False
 
     async def get_collection_names(self) -> List[str]:
+        await self._ensure_connected()
+
         query = """
         MATCH (c:Collection {tenant_id: $tenant_id})
         RETURN c.name AS name
@@ -690,7 +698,7 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         MATCH (c:Collection {name: $collection_name, tenant_id: $tenant_id})
         CALL db.index.vector.queryNodes($index_name, 20, $vector)
         YIELD node, score
-        WHERE (node)-[:BELONGS_TO]->(c)
+        WHERE EXISTS { MATCH (node)-[:BELONGS_TO]->(c) }
           AND node.id <> $point_id
           AND score >= $threshold
         RETURN node.id AS id, score
@@ -731,6 +739,8 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
     async def add_points_to_tenant(
         self, collection_name: str, points: List[PointStruct]
     ) -> UpdateResult:
+        await self._ensure_connected()
+
         operation_id = random.randint(1, 100000)
         for point in points:
             await self.add_point_to_tenant(
@@ -743,8 +753,9 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         return UpdateResult(status="completed", operation_id=operation_id)
 
     async def delete_tenant_points(self, collection_name: str, metadata: Dict | None = None) -> UpdateResult:
-        operation_id = random.randint(1, 100000)
+        await self._ensure_connected()
 
+        operation_id = random.randint(1, 100000)
         params = {"tenant_id": self.agent_id, "collection_name": collection_name}
 
         conditions = []
@@ -769,6 +780,8 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         return UpdateResult(status="completed", operation_id=operation_id)
 
     async def delete_tenant_points_by_ids(self, collection_name: str, points_ids: List) -> UpdateResult:
+        await self._ensure_connected()
+
         operation_id = random.randint(1, 100000)
 
         query = """
@@ -792,6 +805,8 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         return UpdateResult(status="completed", operation_id=operation_id)
 
     async def retrieve_tenant_points(self, collection_name: str, points: List) -> List[Record]:
+        await self._ensure_connected()
+
         query = """
         MATCH (d:Document)
         WHERE d.id IN $ids AND d.tenant_id = $tenant_id
@@ -1223,6 +1238,8 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         return documents
 
     async def recall_tenant_memory(self, collection_name: str) -> List[DocumentRecall]:
+        await self._ensure_connected()
+
         """Retrieves all memory points."""
         query = """
         MATCH (c:Collection {name: $collection_name, tenant_id: $tenant_id})<-[:BELONGS_TO]-(d:Document)
@@ -1258,6 +1275,8 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         metadata: Dict | None = None,
         with_vectors: bool = True,
     ) -> Tuple[List[Record], int | str | None]:
+        await self._ensure_connected()
+
         skip = int(offset) if offset and offset.isdigit() else 0
         query_limit = limit or 1000
 
@@ -1322,6 +1341,8 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         )
 
     async def get_tenant_vectors_count(self, collection_name: str) -> int:
+        await self._ensure_connected()
+
         query = """
         MATCH (c:Collection {name: $collection_name, tenant_id: $tenant_id})<-[:BELONGS_TO]-(d:Document)
         RETURN count(d) AS count
@@ -1346,11 +1367,13 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         score_threshold: float | None = None,
     ) -> List[ScoredPoint]:
         """Direct vector search (without expansion)."""
+        await self._ensure_connected()
+
         search_query = """
         MATCH (c:Collection {name: $collection_name, tenant_id: $tenant_id})
         CALL db.index.vector.queryNodes($index_name, $limit, $vector)
         YIELD node, score
-        WHERE (node)-[:BELONGS_TO]->(c)
+        WHERE EXISTS { MATCH (node)-[:BELONGS_TO]->(c) }
           AND score >= $threshold
         RETURN node.id AS id, node.content AS content, node.metadata AS metadata, 
                node.embedding AS embedding, score
@@ -1396,6 +1419,8 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         k_prefetched: int,
         threshold: float,
     ) -> List[ScoredPoint]:
+        await self._ensure_connected()
+
         return await self.search_in_tenant(
             collection_name, query_vector, query_filter, True, True, k, threshold
         )

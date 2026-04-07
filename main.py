@@ -37,6 +37,10 @@ async def before_cat_recalls_memories(config: RecallSettings, cat: StrayCat) -> 
 
 @hook(priority=10)
 async def before_rabbithole_stores_documents(docs: List[Document], cat) -> List[Document]:
+    vmh = await cat.vector_memory_handler()
+    if isinstance(vmh, GraphRAGHandler) and vmh.entity_extractor:
+        await vmh.entity_extractor.ensure_initialized()
+
     if hasattr(cat.vector_memory_handler, "embedder"):
         cat.vector_memory_handler.embedder = await cat.embedder()
 
@@ -48,10 +52,3 @@ async def after_plugin_settings_update(plugin_id: str, settings: Dict[str, Any],
     vmh = await cat.vector_memory_handler()
     if isinstance(vmh, GraphRAGHandler) and vmh.entity_extractor:
         await vmh.entity_extractor.ensure_downloaded()
-
-
-@hook(priority=10)
-async def after_cat_bootstrap(cat) -> None:
-    vmh = await cat.vector_memory_handler()
-    if isinstance(vmh, GraphRAGHandler) and vmh.entity_extractor:
-        await vmh.entity_extractor.ensure_initialized()
