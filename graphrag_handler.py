@@ -1,4 +1,5 @@
 import random
+import math
 import uuid
 import json
 import asyncio
@@ -99,6 +100,11 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
             "graph_decay_factor": self._graph_decay_factor,
             "connection_pool_size": self._connection_pool_size,
         }
+
+    def _is_valid_vector(self, vector: List[float]) -> bool:
+        """Check if a vector has non-zero and finite L2-norm."""
+        _l2_sq = sum(x * x for x in vector)
+        return _l2_sq != 0.0 and math.isfinite(math.sqrt(_l2_sq))
 
     def _eq(self, other: "GraphRAGHandler") -> bool:
         return self.to_dict() == other.to_dict()
@@ -288,6 +294,9 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         Deletes all Document and Collection nodes belonging to this tenant.
         Orphaned Entity nodes (no remaining MENTIONS) are pruned as well.
 
+        Entity nodes may have RELATED_TO edges, so DETACH DELETE is used
+        to avoid relationship-constraint errors from Neo4j.
+
         Called when an embedder change is detected — all existing embeddings
         are stale and must be discarded before the indexes are rebuilt.
         """
@@ -309,7 +318,7 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
             """
             MATCH (e:Entity {tenant_id: $tenant_id})
             WHERE NOT (e)<-[:MENTIONS]-()
-            DELETE e
+            DETACH DELETE e
             """,
             tenant_id=self.agent_id,
         )
@@ -514,7 +523,26 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         await self._ensure_connected()
 
         point_id = id_point or str(uuid.uuid4())
+
+        # ── Guard: empty content ──────────────────────────────────────────────
+        if not content or not content.strip():
+            log.warning(
+                f"[GraphRAG] Skipping point {point_id}: content is empty or whitespace-only. "
+                "Check the document splitter / loader upstream."
+            )
+            return None
+
         vector_list = list(vector)
+
+        # ── Guard: zero / non-finite embedding vector ─────────────────────────
+        if not self._is_valid_vector(vector_list):
+            log.warning(
+                f"[GraphRAG] Skipping point {point_id}: embedding vector has zero or "
+                "non-finite L2-norm. The embedder may have returned a fallback zero "
+                "tensor (e.g. empty input, cold-start failure, or unreachable model)."
+            )
+            return None
+
         metadata = metadata or {}
         metadata["tenant_id"] = self.agent_id
         # Neo4j does not support Map-type node properties (only primitives /
@@ -666,7 +694,13 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
                         self._embedder.embed_documents, names
                     )
                     for ent, emb in zip(entities_batch, embeddings):
-                        ent["embedding"] = emb
+                        if self._is_valid_vector(emb):
+                            ent["embedding"] = emb
+                        else:
+                            log.warning(
+                                f"[GraphRAG] Skipping entity embedding for {ent['name']}: "
+                                "zero or non-finite vector"
+                            )
                 except Exception as emb_err:
                     log.warning(f"[GraphRAG] Entity embedding skipped: {emb_err}")
 
@@ -744,6 +778,14 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         a link regardless of the direction used by future queries.
         A single UNWIND query replaces the previous one-round-trip-per-document loop.
         """
+        # ── Guard: reject zero / non-finite vectors before hitting Neo4j ──────
+        if not self._is_valid_vector(vector):
+            log.warning(
+                f"[GraphRAG] Skipping similarity search for {point_id}: "
+                "vector has zero or non-finite L2-norm."
+            )
+            return
+
         find_similar_query = """
         MATCH (c:Collection {name: $collection_name, tenant_id: $tenant_id})
         CALL db.index.vector.queryNodes($index_name, 20, $vector)
@@ -865,7 +907,7 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
         orphan_query = """
         MATCH (e:Entity {tenant_id: $tenant_id})
         WHERE NOT (e)<-[:MENTIONS]-()
-        DELETE e
+        DETACH DELETE e
         """
         async with self._get_session() as session:
             await session.run(
@@ -973,6 +1015,14 @@ class GraphRAGHandler(BaseVectorDatabaseHandler):
             return ed, er, ev, vr
 
         await self._ensure_connected()
+
+        # ── Guard: reject zero / non-finite / null embeddings from CAT ──────────
+        if not embedding or not self._is_valid_vector(embedding):
+            log.warning(
+                "[GraphRAG] recall_tenant_memory_from_embedding called with "
+                "null, zero, or non-finite embedding from CAT — returning empty"
+            )
+            return []
 
         threshold = threshold or self._vector_similarity_threshold
         k = k or 5
